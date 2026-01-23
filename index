@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#f4f4f0">
+    <meta name="description" content="A clean, e-ink inspired weather app.">
+    <title>E-Ink Weather</title>
+    
+    <!-- PWA Links -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        /* --- CSS VARIABLES & THEME ENGINE --- */
+        :root {
+            /* Default (Light) */
+            --ink-black: #111111;
+            --paper-white: #f4f4f0;
+            --border-thick: 3px solid var(--ink-black);
+            --border-thin: 1px solid var(--ink-black);
+        }
+
+        /* Dark Mode Override */
+        body.dark-mode {
+            --ink-black: #f4f4f0;
+            --paper-white: #111111;
+        }
+
+        /* Global Reset & Base */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--paper-white);
+            font-family: 'Inter', sans-serif;
+            color: var(--ink-black);
+            height: 100dvh; 
+            width: 100%;
+            overflow-y: auto; 
+            overflow-x: hidden;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* --- LAYOUT CONTAINER --- */
+        .e-ink-device {
+            background-color: var(--paper-white);
+            width: 100%;
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            transition: background-color 0.3s;
+        }
+
+        /* Flash Animation */
+        @keyframes flash {
+            0% { filter: invert(0); }
+            50% { filter: invert(1); }
+            100% { filter: invert(0); }
+        }
+        .refreshing {
+            animation: flash 0.6s ease-in-out;
+        }
+
+        /* --- HEADER --- */
+        header {
+            padding: 16px 20px;
+            border-bottom: var(--border-thick);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+            height: 60px;
+        }
+
+        .location-badge {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            background: var(--ink-black);
+            color: var(--paper-white);
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        .refresh-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--ink-black);
+            padding: 4px;
+            transition: color 0.3s;
+        }
+
+        /* --- SECTIONS --- */
+        .current-weather {
+            flex: 1 1 auto; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            border-bottom: var(--border-thick);
+            padding: 10px 0;
+        }
+
+        .date-display {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.9rem;
+            margin-bottom: 1vh;
+            opacity: 0.8;
+        }
+
+        .weather-icon-large {
+            font-size: 10vh; 
+            margin-bottom: 0;
+        }
+
+        .temperature-hero {
+            font-size: 13vh; 
+            font-weight: 900;
+            line-height: 0.9;
+            letter-spacing: -4px;
+        }
+
+        .condition-text {
+            font-size: 2.5vh;
+            font-weight: 600;
+            margin-top: 1vh;
+            text-transform: uppercase;
+        }
+
+        /* --- STATS --- */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            border-bottom: var(--border-thick);
+            flex-shrink: 0;
+            height: 80px;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+        }
+
+        .stat-item:first-child {
+            border-right: var(--border-thick);
+        }
+
+        .stat-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+        }
+        .stat-value {
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        /* --- FORECAST --- */
+        .forecast-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .forecast-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 24px;
+            border-bottom: 1px solid var(--ink-black);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.9rem;
+            height: 50px;
+            transition: border-color 0.3s;
+        }
+        
+        .forecast-item:last-child {
+            border-bottom: var(--border-thick);
+        }
+
+        .day-name { width: 50px; font-weight: 600; }
+        .forecast-temps { display: flex; gap: 16px; }
+        .temp-high { font-weight: 700; }
+        .temp-low { opacity: 0.6; }
+
+        /* --- CONTROLS --- */
+        .controls {
+            padding: 16px 20px;
+            padding-bottom: max(16px, env(safe-area-inset-bottom));
+            display: flex;
+            gap: 12px;
+            background: var(--paper-white);
+            flex-shrink: 0;
+            transition: background 0.3s;
+        }
+
+        button.action-btn {
+            flex: 1;
+            padding: 14px 4px;
+            border: var(--border-thick);
+            background: transparent;
+            font-family: 'IBM Plex Mono', monospace;
+            font-weight: 600;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            color: var(--ink-black);
+            transition: all 0.2s;
+        }
+
+        button.action-btn:active {
+            background: var(--ink-black);
+            color: var(--paper-white);
+        }
+
+        /* --- SEARCH MODAL --- */
+        .search-modal {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--paper-white);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            display: none; 
+            transition: background 0.3s;
+        }
+        .search-modal.active { display: flex; }
+
+        .search-container {
+            width: 100%;
+            max-width: 400px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .search-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 1rem;
+            text-transform: uppercase;
+            font-weight: 600;
+            color: var(--ink-black);
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 16px;
+            border: var(--border-thick);
+            background: transparent;
+            font-family: 'Inter', sans-serif;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--ink-black);
+            outline: none;
+            border-radius: 0;
+            -webkit-appearance: none;
+        }
+        
+        .search-input::placeholder { color: var(--ink-black); opacity: 0.4; }
+
+        .search-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 8px;
+        }
+        
+        .modal-btn {
+            flex: 1;
+            padding: 16px;
+            border: var(--border-thick);
+            background: transparent;
+            font-family: 'IBM Plex Mono', monospace;
+            font-weight: 600;
+            text-transform: uppercase;
+            cursor: pointer;
+            font-size: 1rem;
+            color: var(--ink-black);
+            transition: all 0.2s;
+        }
+        
+        .modal-btn.primary { 
+            background: var(--ink-black); 
+            color: var(--paper-white); 
+        }
+        
+        .modal-btn:active { transform: translateY(2px); }
+
+        /* --- LOADING & OVERLAYS --- */
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--paper-white);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+            flex-direction: column;
+            gap: 16px;
+            transition: background 0.3s;
+        }
+        .loading-overlay.hidden { display: none; }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--ink-black);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* --- MEDIA QUERIES --- */
+        @media (max-height: 600px) {
+            .temperature-hero { font-size: 4rem; }
+            .weather-icon-large { font-size: 3rem; }
+            .forecast-item { height: 40px; padding: 8px 24px; }
+            .current-weather { padding: 5px 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="e-ink-device" id="device">
+        <!-- Loaders -->
+        <div class="loading-overlay" id="loader">
+            <div class="spinner"></div>
+            <span style="font-family: 'IBM Plex Mono'; font-size: 0.8rem; color: var(--ink-black);">LOADING...</span>
+        </div>
+
+        <!-- Search Modal -->
+        <div class="search-modal" id="search-modal">
+            <div class="search-container">
+                <label class="search-label">Enter City Name:</label>
+                <input type="text" class="search-input" id="city-input" placeholder="e.g. London, Paris">
+                <div class="search-actions">
+                    <button class="modal-btn" onclick="closeSearch()">Cancel</button>
+                    <button class="modal-btn primary" onclick="submitSearch()">Search</button>
+                </div>
+            </div>
+        </div>
+
+        <header>
+            <div class="location-badge" id="location-text" onclick="openSearch()">LONDON, UK</div>
+            <button class="refresh-btn" onclick="fetchWeather()" aria-label="Refresh">
+                <i class="ph ph-arrows-clockwise" style="font-size: 24px;"></i>
+            </button>
+        </header>
+
+        <section class="current-weather">
+            <div class="date-display" id="current-date">--</div>
+            <i id="main-icon" class="ph ph-sun weather-icon-large"></i>
+            <div class="temperature-hero"><span id="current-temp">--</span>°</div>
+            <div class="condition-text" id="condition-text">Loading</div>
+        </section>
+
+        <section class="stats-grid">
+            <div class="stat-item">
+                <i class="ph ph-wind" style="font-size: 20px;"></i>
+                <span class="stat-value" id="wind-speed">--</span>
+                <span class="stat-label">Wind</span>
+            </div>
+            <div class="stat-item">
+                <i class="ph ph-drop" style="font-size: 20px;"></i>
+                <span class="stat-value" id="humidity">--</span>
+                <span class="stat-label">Humidity</span>
+            </div>
+        </section>
+
+        <ul class="forecast-list" id="forecast-container"></ul>
+
+        <div class="controls">
+            <button class="action-btn" onclick="getLocation()">
+                <i class="ph ph-crosshair"></i> GPS
+            </button>
+            <button class="action-btn" onclick="openSearch()">
+                <i class="ph ph-magnifying-glass"></i> Search
+            </button>
+            <button class="action-btn" onclick="toggleTheme()">
+                <i class="ph ph-moon"></i> Theme
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- Service Worker Registration ---
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('Service Worker registered'))
+                    .catch(err => console.log('Service Worker failed', err));
+            });
+        }
+
+        // --- App Logic ---
+        const DEFAULT_LAT = 51.5074;
+        const DEFAULT_LON = -0.1278; 
+        const DEFAULT_NAME = "LONDON, UK";
+        let currentLat = DEFAULT_LAT;
+        let currentLon = DEFAULT_LON;
+        let currentLocationName = DEFAULT_NAME;
+        
+        const device = document.getElementById('device');
+        const loader = document.getElementById('loader');
+        const searchModal = document.getElementById('search-modal');
+        const cityInput = document.getElementById('city-input');
+
+        window.onload = () => {
+            loadState();
+            updateDate();
+            fetchWeather();
+        };
+
+        function loadState() {
+            const savedTheme = localStorage.getItem('weather_theme');
+            if (savedTheme === 'dark') {
+                document.body.classList.add('dark-mode');
+                // Update meta theme color for browser UI
+                document.querySelector('meta[name="theme-color"]').setAttribute('content', '#111111');
+            }
+
+            const savedLat = localStorage.getItem('weather_lat');
+            const savedLon = localStorage.getItem('weather_lon');
+            const savedName = localStorage.getItem('weather_name');
+
+            if (savedLat && savedLon && savedName) {
+                currentLat = parseFloat(savedLat);
+                currentLon = parseFloat(savedLon);
+                currentLocationName = savedName;
+                document.getElementById('location-text').innerText = currentLocationName;
+            }
+        }
+
+        function saveLocation(lat, lon, name) {
+            localStorage.setItem('weather_lat', lat);
+            localStorage.setItem('weather_lon', lon);
+            localStorage.setItem('weather_name', name);
+            currentLat = lat;
+            currentLon = lon;
+            currentLocationName = name;
+        }
+
+        function toggleTheme() {
+            device.classList.add('refreshing');
+            setTimeout(() => device.classList.remove('refreshing'), 600);
+            document.body.classList.toggle('dark-mode');
+
+            if (document.body.classList.contains('dark-mode')) {
+                localStorage.setItem('weather_theme', 'dark');
+                document.querySelector('meta[name="theme-color"]').setAttribute('content', '#111111');
+            } else {
+                localStorage.setItem('weather_theme', 'light');
+                document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f4f4f0');
+            }
+        }
+
+        function openSearch() {
+            searchModal.classList.add('active');
+            cityInput.value = '';
+            cityInput.focus();
+        }
+
+        function closeSearch() {
+            searchModal.classList.remove('active');
+        }
+
+        async function submitSearch() {
+            const query = cityInput.value.trim();
+            if(!query) return;
+
+            loader.classList.remove('hidden');
+            closeSearch();
+
+            try {
+                const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`;
+                const geoRes = await fetch(geoUrl);
+                const geoData = await geoRes.json();
+
+                if (!geoData.results || geoData.results.length === 0) {
+                    alert("City not found. Please try again.");
+                    loader.classList.add('hidden');
+                    openSearch(); 
+                    return;
+                }
+
+                const result = geoData.results[0];
+                let locationName = result.name;
+                if(result.country_code) locationName += `, ${result.country_code}`;
+                locationName = locationName.toUpperCase();
+
+                saveLocation(result.latitude, result.longitude, locationName);
+                document.getElementById('location-text').innerText = locationName;
+
+                device.classList.add('refreshing');
+                await fetchWeather();
+                setTimeout(() => device.classList.remove('refreshing'), 600);
+
+            } catch (e) {
+                console.error(e);
+                alert("Error searching for city.");
+                loader.classList.add('hidden');
+            }
+        }
+
+        cityInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') submitSearch();
+        });
+
+        function getLocation() {
+            if (window.location.protocol === 'file:') {
+                openSearch();
+                return;
+            }
+
+            if (navigator.geolocation) {
+                device.classList.add('refreshing');
+                loader.classList.remove('hidden'); 
+                
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        const name = "LOCAL GPS";
+
+                        saveLocation(lat, lon, name);
+                        document.getElementById('location-text').innerText = name;
+
+                        fetchWeather();
+                        setTimeout(() => device.classList.remove('refreshing'), 600);
+                    },
+                    (error) => {
+                        loader.classList.add('hidden');
+                        setTimeout(() => device.classList.remove('refreshing'), 600);
+                        openSearch(); 
+                    }
+                );
+            } else {
+                openSearch();
+            }
+        }
+
+        async function fetchWeather() {
+            loader.classList.remove('hidden');
+            try {
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${currentLat}&longitude=${currentLon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto`;
+                const response = await fetch(url);
+                const data = await response.json();
+                renderCurrent(data.current);
+                renderForecast(data.daily);
+                setTimeout(() => { loader.classList.add('hidden'); }, 500);
+            } catch (error) {
+                console.error("Error fetching weather:", error);
+                document.getElementById('condition-text').innerText = "Offline";
+                loader.classList.add('hidden');
+            }
+        }
+
+        function renderCurrent(current) {
+            document.getElementById('current-temp').innerText = Math.round(current.temperature_2m);
+            document.getElementById('wind-speed').innerText = `${current.wind_speed_10m}km`;
+            document.getElementById('humidity').innerText = `${current.relative_humidity_2m}%`;
+            const info = getWeatherInfo(current.weather_code);
+            document.getElementById('condition-text').innerText = info.text;
+            document.getElementById('main-icon').className = `ph ${info.icon} weather-icon-large`;
+        }
+
+        function renderForecast(daily) {
+            const container = document.getElementById('forecast-container');
+            container.innerHTML = ''; 
+            for(let i = 1; i <= 3; i++) {
+                const dateStr = daily.time[i];
+                const max = Math.round(daily.temperature_2m_max[i]);
+                const min = Math.round(daily.temperature_2m_min[i]);
+                const info = getWeatherInfo(daily.weather_code[i]);
+                const dayName = new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+
+                const li = document.createElement('li');
+                li.className = 'forecast-item';
+                li.innerHTML = `
+                    <span class="day-name">${dayName}</span>
+                    <i class="ph ${info.icon}" style="font-size: 24px;"></i>
+                    <div class="forecast-temps">
+                        <span class="temp-high">${max}°</span>
+                        <span class="temp-low">${min}°</span>
+                    </div>
+                `;
+                container.appendChild(li);
+            }
+        }
+
+        function updateDate() {
+            const now = new Date();
+            const options = { weekday: 'long', month: 'short', day: 'numeric' };
+            document.getElementById('current-date').innerText = now.toLocaleDateString('en-US', options).toUpperCase();
+        }
+
+        function getWeatherInfo(code) {
+            if (code === 0) return { text: "Sunny", icon: "ph-sun" };
+            if (code >= 1 && code <= 3) return { text: "Cloudy", icon: "ph-cloud" };
+            if (code >= 45 && code <= 48) return { text: "Foggy", icon: "ph-cloud-fog" };
+            if (code >= 51 && code <= 67) return { text: "Rain", icon: "ph-cloud-rain" };
+            if (code >= 71 && code <= 77) return { text: "Snow", icon: "ph-snowflake" };
+            if (code >= 95) return { text: "Storm", icon: "ph-lightning" };
+            return { text: "Unknown", icon: "ph-question" };
+        }
+    </script>
+</body>
+</html>
